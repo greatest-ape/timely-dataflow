@@ -1,11 +1,11 @@
 //! Push and Pull wrappers to maintain counts of messages in channels.
 
-use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::rc::Rc;
 
-use crate::{Push, Pull};
 use crate::allocator::Event;
+use crate::{Pull, Push};
 
 /// The push half of an intra-thread channel.
 pub struct Pusher<T, P: Push<T>> {
@@ -16,7 +16,7 @@ pub struct Pusher<T, P: Push<T>> {
     phantom: ::std::marker::PhantomData<T>,
 }
 
-impl<T, P: Push<T>>  Pusher<T, P> {
+impl<T, P: Push<T>> Pusher<T, P> {
     /// Wraps a pusher with a message counter.
     pub fn new(pusher: P, index: usize, events: Rc<RefCell<VecDeque<(usize, Event)>>>) -> Self {
         Pusher {
@@ -65,9 +65,14 @@ pub struct ArcPusher<T, P: Push<T>> {
     buzzer: crate::buzzer::Buzzer,
 }
 
-impl<T, P: Push<T>>  ArcPusher<T, P> {
+impl<T, P: Push<T>> ArcPusher<T, P> {
     /// Wraps a pusher with a message counter.
-    pub fn new(pusher: P, index: usize, events: Sender<(usize, Event)>, buzzer: crate::buzzer::Buzzer) -> Self {
+    pub fn new(
+        pusher: P,
+        index: usize,
+        events: Sender<(usize, Event)>,
+        buzzer: crate::buzzer::Buzzer,
+    ) -> Self {
         ArcPusher {
             index,
             // count: 0,
@@ -100,8 +105,8 @@ impl<T, P: Push<T>> Push<T> for ArcPusher<T, P> {
         // multiple threads are involved.
         self.pusher.push(element);
         let _ = self.events.send((self.index, Event::Pushed(1)));
-            // TODO : Perhaps this shouldn't be a fatal error (e.g. in shutdown).
-            // .expect("Failed to send message count");
+        // TODO : Perhaps this shouldn't be a fatal error (e.g. in shutdown).
+        // .expect("Failed to send message count");
         self.buzzer.buzz();
     }
 }
@@ -115,7 +120,7 @@ pub struct Puller<T, P: Pull<T>> {
     phantom: ::std::marker::PhantomData<T>,
 }
 
-impl<T, P: Pull<T>>  Puller<T, P> {
+impl<T, P: Pull<T>> Puller<T, P> {
     /// Wraps a puller with a message counter.
     pub fn new(puller: P, index: usize, events: Rc<RefCell<VecDeque<(usize, Event)>>>) -> Self {
         Puller {
@@ -138,8 +143,7 @@ impl<T, P: Pull<T>> Pull<T> for Puller<T, P> {
                     .push_back((self.index, Event::Pulled(self.count)));
                 self.count = 0;
             }
-        }
-        else {
+        } else {
             self.count += 1;
         }
 

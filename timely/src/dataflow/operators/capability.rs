@@ -21,16 +21,16 @@
 //! An operator should not hand its capabilities to some other operator. In the future, we should
 //! probably bind capabilities more strongly to a specific operator and output.
 
-use std::{borrow, error::Error, fmt::Display, ops::Deref};
-use std::rc::Rc;
 use std::cell::RefCell;
 use std::fmt::{self, Debug};
+use std::rc::Rc;
+use std::{borrow, error::Error, fmt::Display, ops::Deref};
 
-use crate::order::PartialOrder;
-use crate::progress::Timestamp;
-use crate::progress::ChangeBatch;
-use crate::scheduling::Activations;
 use crate::dataflow::channels::pullers::counter::ConsumedGuard;
+use crate::order::PartialOrder;
+use crate::progress::ChangeBatch;
+use crate::progress::Timestamp;
+use crate::scheduling::Activations;
 
 /// An internal trait expressing the capability to send messages with a given timestamp.
 pub trait CapabilityTrait<T: Timestamp> {
@@ -40,13 +40,17 @@ pub trait CapabilityTrait<T: Timestamp> {
 }
 
 impl<'a, T: Timestamp, C: CapabilityTrait<T>> CapabilityTrait<T> for &'a C {
-    fn time(&self) -> &T { (**self).time() }
+    fn time(&self) -> &T {
+        (**self).time()
+    }
     fn valid_for_output(&self, query_buffer: &Rc<RefCell<ChangeBatch<T>>>) -> bool {
         (**self).valid_for_output(query_buffer)
     }
 }
 impl<'a, T: Timestamp, C: CapabilityTrait<T>> CapabilityTrait<T> for &'a mut C {
-    fn time(&self) -> &T { (**self).time() }
+    fn time(&self) -> &T {
+        (**self).time()
+    }
     fn valid_for_output(&self, query_buffer: &Rc<RefCell<ChangeBatch<T>>>) -> bool {
         (**self).valid_for_output(query_buffer)
     }
@@ -64,7 +68,9 @@ pub struct Capability<T: Timestamp> {
 }
 
 impl<T: Timestamp> CapabilityTrait<T> for Capability<T> {
-    fn time(&self) -> &T { &self.time }
+    fn time(&self) -> &T {
+        &self.time
+    }
     fn valid_for_output(&self, query_buffer: &Rc<RefCell<ChangeBatch<T>>>) -> bool {
         Rc::ptr_eq(&self.internal, query_buffer)
     }
@@ -76,10 +82,7 @@ impl<T: Timestamp> Capability<T> {
     pub(crate) fn new(time: T, internal: Rc<RefCell<ChangeBatch<T>>>) -> Self {
         internal.borrow_mut().update(time.clone(), 1);
 
-        Self {
-            time,
-            internal,
-        }
+        Self { time, internal }
     }
 
     /// The timestamp associated with this capability.
@@ -102,8 +105,7 @@ impl<T: Timestamp> Capability<T> {
             // we outline it
             panic!(
                 "Attempted to delay {:?} to {:?}, which is not beyond the capability's time.",
-                capability,
-                invalid_time,
+                capability, invalid_time,
             )
         }
 
@@ -137,8 +139,7 @@ impl<T: Timestamp> Capability<T> {
             // we outline it
             panic!(
                 "Attempted to downgrade {:?} to {:?}, which is not beyond the capability's time.",
-                capability,
-                invalid_time,
+                capability, invalid_time,
             )
         }
 
@@ -196,7 +197,7 @@ impl<T: Timestamp> PartialEq for Capability<T> {
         self.time() == other.time() && Rc::ptr_eq(&self.internal, &other.internal)
     }
 }
-impl<T: Timestamp> Eq for Capability<T> { }
+impl<T: Timestamp> Eq for Capability<T> {}
 
 impl<T: Timestamp> PartialOrder for Capability<T> {
     fn less_equal(&self, other: &Self) -> bool {
@@ -229,25 +230,34 @@ type CapabilityUpdates<T> = Rc<RefCell<Vec<Rc<RefCell<ChangeBatch<T>>>>>>;
 ///
 /// The capability reference supplies a `retain(self)` method which consumes the reference
 /// and turns it into an owned capability
-pub struct CapabilityRef<'cap, T: Timestamp+'cap> {
+pub struct CapabilityRef<'cap, T: Timestamp + 'cap> {
     time: &'cap T,
     internal: CapabilityUpdates<T>,
     /// A drop guard that updates the consumed capability this CapabilityRef refers to on drop
     _consumed_guard: ConsumedGuard<'cap, T>,
 }
 
-impl<'cap, T: Timestamp+'cap> CapabilityTrait<T> for CapabilityRef<'cap, T> {
-    fn time(&self) -> &T { self.time }
+impl<'cap, T: Timestamp + 'cap> CapabilityTrait<T> for CapabilityRef<'cap, T> {
+    fn time(&self) -> &T {
+        self.time
+    }
     fn valid_for_output(&self, query_buffer: &Rc<RefCell<ChangeBatch<T>>>) -> bool {
         // let borrow = ;
-        self.internal.borrow().iter().any(|rc| Rc::ptr_eq(rc, query_buffer))
+        self.internal
+            .borrow()
+            .iter()
+            .any(|rc| Rc::ptr_eq(rc, query_buffer))
     }
 }
 
 impl<'cap, T: Timestamp + 'cap> CapabilityRef<'cap, T> {
     /// Creates a new capability reference at `time` while incrementing (and keeping a reference to)
     /// the provided [`ChangeBatch`].
-    pub(crate) fn new(time: &'cap T, internal: CapabilityUpdates<T>, guard: ConsumedGuard<'cap, T>) -> Self {
+    pub(crate) fn new(
+        time: &'cap T,
+        internal: CapabilityUpdates<T>,
+        guard: ConsumedGuard<'cap, T>,
+    ) -> Self {
         CapabilityRef {
             time,
             internal,
@@ -272,12 +282,17 @@ impl<'cap, T: Timestamp + 'cap> CapabilityRef<'cap, T> {
     pub fn delayed_for_output(&self, new_time: &T, output_port: usize) -> Capability<T> {
         // TODO : Test operator summary?
         if !self.time.less_equal(new_time) {
-            panic!("Attempted to delay {:?} to {:?}, which is not beyond the capability's time.", self, new_time);
+            panic!(
+                "Attempted to delay {:?} to {:?}, which is not beyond the capability's time.",
+                self, new_time
+            );
         }
         if output_port < self.internal.borrow().len() {
-            Capability::new(new_time.clone(), self.internal.borrow()[output_port].clone())
-        }
-        else {
+            Capability::new(
+                new_time.clone(),
+                self.internal.borrow()[output_port].clone(),
+            )
+        } else {
             panic!("Attempted to acquire a capability for a non-existent output port.");
         }
     }
@@ -295,9 +310,11 @@ impl<'cap, T: Timestamp + 'cap> CapabilityRef<'cap, T> {
     /// Transforms to an owned capability for a specific output port.
     pub fn retain_for_output(self, output_port: usize) -> Capability<T> {
         if output_port < self.internal.borrow().len() {
-            Capability::new(self.time.clone(), self.internal.borrow()[output_port].clone())
-        }
-        else {
+            Capability::new(
+                self.time.clone(),
+                self.internal.borrow()[output_port].clone(),
+            )
+        } else {
             panic!("Attempted to acquire a capability for a non-existent output port.");
         }
     }
@@ -329,7 +346,9 @@ pub struct ActivateCapability<T: Timestamp> {
 }
 
 impl<T: Timestamp> CapabilityTrait<T> for ActivateCapability<T> {
-    fn time(&self) -> &T { self.capability.time() }
+    fn time(&self) -> &T {
+        self.capability.time()
+    }
     fn valid_for_output(&self, query_buffer: &Rc<RefCell<ChangeBatch<T>>>) -> bool {
         self.capability.valid_for_output(query_buffer)
     }
@@ -337,7 +356,11 @@ impl<T: Timestamp> CapabilityTrait<T> for ActivateCapability<T> {
 
 impl<T: Timestamp> ActivateCapability<T> {
     /// Creates a new activating capability.
-    pub fn new(capability: Capability<T>, address: &[usize], activations: Rc<RefCell<Activations>>) -> Self {
+    pub fn new(
+        capability: Capability<T>,
+        address: &[usize],
+        activations: Rc<RefCell<Activations>>,
+    ) -> Self {
         Self {
             capability,
             address: Rc::new(address.to_vec()),
@@ -379,15 +402,18 @@ pub struct CapabilitySet<T: Timestamp> {
 }
 
 impl<T: Timestamp> CapabilitySet<T> {
-
     /// Allocates an empty capability set.
     pub fn new() -> Self {
-        Self { elements: Vec::new() }
+        Self {
+            elements: Vec::new(),
+        }
     }
 
     /// Allocates an empty capability set with space for `capacity` elements
     pub fn with_capacity(capacity: usize) -> Self {
-        Self { elements: Vec::with_capacity(capacity) }
+        Self {
+            elements: Vec::with_capacity(capacity),
+        }
     }
 
     /// Allocates a capability set containing a single capability.
@@ -420,7 +446,9 @@ impl<T: Timestamp> CapabilitySet<T> {
     /// });
     /// ```
     pub fn from_elem(cap: Capability<T>) -> Self {
-        Self { elements: vec![cap] }
+        Self {
+            elements: vec![cap],
+        }
     }
 
     /// Inserts `capability` into the set, discarding redundant capabilities.
@@ -534,7 +562,7 @@ impl<T: Timestamp> Default for CapabilitySet<T> {
 }
 
 impl<T: Timestamp> Deref for CapabilitySet<T> {
-    type Target=[Capability<T>];
+    type Target = [Capability<T>];
 
     fn deref(&self) -> &[Capability<T>] {
         &self.elements

@@ -1,14 +1,14 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicIsize, Ordering};
+use std::sync::Arc;
 
 use abomonation::Abomonation;
-use timely::dataflow::operators::capture::event::{EventCore, EventPusherCore, EventIteratorCore};
+use timely::dataflow::operators::capture::event::{EventCore, EventIteratorCore, EventPusherCore};
 
-use rdkafka::Message;
 use rdkafka::client::ClientContext;
 use rdkafka::config::ClientConfig;
-use rdkafka::producer::{BaseProducer, BaseRecord, ProducerContext, DeliveryResult};
-use rdkafka::consumer::{Consumer, BaseConsumer, DefaultConsumerContext};
+use rdkafka::consumer::{BaseConsumer, Consumer, DefaultConsumerContext};
+use rdkafka::producer::{BaseProducer, BaseRecord, DeliveryResult, ProducerContext};
+use rdkafka::Message;
 
 use rdkafka::config::FromClientConfigAndContext;
 
@@ -19,7 +19,7 @@ struct OutstandingCounterContext {
     outstanding: Arc<AtomicIsize>,
 }
 
-impl ClientContext for OutstandingCounterContext { }
+impl ClientContext for OutstandingCounterContext {}
 
 impl ProducerContext for OutstandingCounterContext {
     type DeliveryOpaque = ();
@@ -31,7 +31,7 @@ impl ProducerContext for OutstandingCounterContext {
 impl OutstandingCounterContext {
     pub fn new(counter: &Arc<AtomicIsize>) -> Self {
         OutstandingCounterContext {
-            outstanding: counter.clone()
+            outstanding: counter.clone(),
         }
     }
 }
@@ -42,7 +42,7 @@ pub struct EventProducerCore<T, D> {
     buffer: Vec<u8>,
     producer: BaseProducer<OutstandingCounterContext>,
     counter: Arc<AtomicIsize>,
-    phant: ::std::marker::PhantomData<(T,D)>,
+    phant: ::std::marker::PhantomData<(T, D)>,
 }
 
 /// [EventProducerCore] specialized to vector-based containers.
@@ -53,7 +53,9 @@ impl<T, D> EventProducerCore<T, D> {
     pub fn new(config: ClientConfig, topic: String) -> Self {
         let counter = Arc::new(AtomicIsize::new(0));
         let context = OutstandingCounterContext::new(&counter);
-        let producer = BaseProducer::<OutstandingCounterContext>::from_config_and_context(&config, context).expect("Couldn't create producer");
+        let producer =
+            BaseProducer::<OutstandingCounterContext>::from_config_and_context(&config, context)
+                .expect("Couldn't create producer");
         println!("allocating producer for topic {:?}", topic);
         Self {
             topic: topic,
@@ -67,9 +69,13 @@ impl<T, D> EventProducerCore<T, D> {
 
 impl<T: Abomonation, D: Abomonation> EventPusherCore<T, D> for EventProducerCore<T, D> {
     fn push(&mut self, event: EventCore<T, D>) {
-        unsafe { ::abomonation::encode(&event, &mut self.buffer).expect("Encode failure"); }
+        unsafe {
+            ::abomonation::encode(&event, &mut self.buffer).expect("Encode failure");
+        }
         // println!("sending {:?} bytes", self.buffer.len());
-        self.producer.send::<(),[u8]>(BaseRecord::to(self.topic.as_str()).payload(&self.buffer[..])).unwrap();
+        self.producer
+            .send::<(), [u8]>(BaseRecord::to(self.topic.as_str()).payload(&self.buffer[..]))
+            .unwrap();
         self.counter.fetch_add(1, Ordering::SeqCst);
         self.producer.poll(std::time::Duration::from_millis(0));
         self.buffer.clear();
@@ -88,7 +94,7 @@ impl<T, D> Drop for EventProducerCore<T, D> {
 pub struct EventConsumerCore<T, D> {
     consumer: BaseConsumer<DefaultConsumerContext>,
     buffer: Vec<u8>,
-    phant: ::std::marker::PhantomData<(T,D)>,
+    phant: ::std::marker::PhantomData<(T, D)>,
 }
 
 /// [EventConsumerCore] specialized to vector-based containers.
@@ -98,8 +104,11 @@ impl<T, D> EventConsumerCore<T, D> {
     /// Allocates a new `EventReader` wrapping a supplied reader.
     pub fn new(config: ClientConfig, topic: String) -> Self {
         println!("allocating consumer for topic {:?}", topic);
-        let consumer : BaseConsumer<DefaultConsumerContext> = config.create().expect("Couldn't create consumer");
-        consumer.subscribe(&[&topic]).expect("Failed to subscribe to topic");
+        let consumer: BaseConsumer<DefaultConsumerContext> =
+            config.create().expect("Couldn't create consumer");
+        consumer
+            .subscribe(&[&topic])
+            .expect("Failed to subscribe to topic");
         Self {
             consumer: consumer,
             buffer: Vec::new(),
@@ -112,17 +121,22 @@ impl<T: Abomonation, D: Abomonation> EventIteratorCore<T, D> for EventConsumerCo
     fn next(&mut self) -> Option<&EventCore<T, D>> {
         if let Some(result) = self.consumer.poll(std::time::Duration::from_millis(0)) {
             match result {
-                Ok(message) =>  {
+                Ok(message) => {
                     self.buffer.clear();
                     self.buffer.extend_from_slice(message.payload().unwrap());
-                    Some(unsafe { ::abomonation::decode::<EventCore<T,D>>(&mut self.buffer[..]).unwrap().0 })
-                },
+                    Some(unsafe {
+                        ::abomonation::decode::<EventCore<T, D>>(&mut self.buffer[..])
+                            .unwrap()
+                            .0
+                    })
+                }
                 Err(err) => {
                     println!("KafkaConsumer error: {:?}", err);
                     None
-                },
+                }
             }
+        } else {
+            None
         }
-        else { None }
     }
 }

@@ -1,12 +1,15 @@
 //! Types wrapping typed data.
 
-use std::sync::Arc;
-use bytes::arc::Bytes;
-use abomonation;
 use crate::Data;
+use abomonation;
+use bytes::arc::Bytes;
+use std::sync::Arc;
 
 /// Either an immutable or mutable reference.
-pub enum RefOrMut<'a, T> where T: 'a {
+pub enum RefOrMut<'a, T>
+where
+    T: 'a,
+{
     /// An immutable reference.
     Ref(&'a T),
     /// A mutable reference.
@@ -32,7 +35,7 @@ impl<'a, T: 'a> ::std::borrow::Borrow<T> for RefOrMut<'a, T> {
     }
 }
 
-impl<'a, T: Clone+'a> RefOrMut<'a, T> {
+impl<'a, T: Clone + 'a> RefOrMut<'a, T> {
     /// Extracts the contents of `self`, either by cloning or swapping.
     ///
     /// This consumes `self` because its contents are now in an unknown state.
@@ -54,7 +57,10 @@ impl<'a, T: Clone+'a> RefOrMut<'a, T> {
     /// element in place.
     ///
     /// This consumes `self` because its contents are now in an unknown state.
-    pub fn take(self) -> T where T: Default {
+    pub fn take(self) -> T
+    where
+        T: Default,
+    {
         let mut element = Default::default();
         self.swap(&mut element);
         element
@@ -79,11 +85,15 @@ enum MessageContents<T> {
 impl<T> Message<T> {
     /// Wrap a typed item as a message.
     pub fn from_typed(typed: T) -> Self {
-        Message { payload: MessageContents::Owned(typed) }
+        Message {
+            payload: MessageContents::Owned(typed),
+        }
     }
     /// Wrap a shared typed item as a message.
     pub fn from_arc(typed: Arc<T>) -> Self {
-        Message { payload: MessageContents::Arc(typed) }
+        Message {
+            payload: MessageContents::Arc(typed),
+        }
     }
     /// Destructures and returns any typed data.
     pub fn if_typed(self) -> Option<T> {
@@ -108,9 +118,9 @@ impl<T> Message<T> {
     /// data are serialized binary data.
     pub fn as_ref_or_mut(&mut self) -> RefOrMut<T> {
         match &mut self.payload {
-            MessageContents::Binary(bytes) => { RefOrMut::Ref(bytes) },
-            MessageContents::Owned(typed) => { RefOrMut::Mut(typed) },
-            MessageContents::Arc(typed) => { RefOrMut::Ref(typed) },
+            MessageContents::Binary(bytes) => RefOrMut::Ref(bytes),
+            MessageContents::Owned(typed) => RefOrMut::Mut(typed),
+            MessageContents::Arc(typed) => RefOrMut::Ref(typed),
         }
     }
 }
@@ -126,16 +136,19 @@ impl<T: Data> Message<T> {
     /// the binary data can be safely decoded, which is unsafe for e.g. UTF8 data and
     /// enumerations (perhaps among many other types).
     pub unsafe fn from_bytes(bytes: Bytes) -> Self {
-        let abomonated = abomonation::abomonated::Abomonated::new(bytes).expect("Abomonated::new() failed.");
-        Message { payload: MessageContents::Binary(abomonated) }
+        let abomonated =
+            abomonation::abomonated::Abomonated::new(bytes).expect("Abomonated::new() failed.");
+        Message {
+            payload: MessageContents::Binary(abomonated),
+        }
     }
 
     /// The number of bytes required to serialize the data.
     pub fn length_in_bytes(&self) -> usize {
         match &self.payload {
-            MessageContents::Binary(bytes) => { bytes.as_bytes().len() },
-            MessageContents::Owned(typed) => { abomonation::measure(typed) },
-            MessageContents::Arc(typed) =>{ abomonation::measure::<T>(&**typed) } ,
+            MessageContents::Binary(bytes) => bytes.as_bytes().len(),
+            MessageContents::Owned(typed) => abomonation::measure(typed),
+            MessageContents::Arc(typed) => abomonation::measure::<T>(&**typed),
         }
     }
 
@@ -143,13 +156,17 @@ impl<T: Data> Message<T> {
     pub fn into_bytes<W: ::std::io::Write>(&self, writer: &mut W) {
         match &self.payload {
             MessageContents::Binary(bytes) => {
-                writer.write_all(bytes.as_bytes()).expect("Message::into_bytes(): write_all failed.");
+                writer
+                    .write_all(bytes.as_bytes())
+                    .expect("Message::into_bytes(): write_all failed.");
+            }
+            MessageContents::Owned(typed) => unsafe {
+                abomonation::encode(typed, writer)
+                    .expect("Message::into_bytes(): Abomonation::encode failed");
             },
-            MessageContents::Owned(typed) => {
-                unsafe { abomonation::encode(typed, writer).expect("Message::into_bytes(): Abomonation::encode failed"); }
-            },
-            MessageContents::Arc(typed) => {
-                unsafe { abomonation::encode(&**typed, writer).expect("Message::into_bytes(): Abomonation::encode failed"); }
+            MessageContents::Arc(typed) => unsafe {
+                abomonation::encode(&**typed, writer)
+                    .expect("Message::into_bytes(): Abomonation::encode failed");
             },
         }
     }
@@ -160,19 +177,21 @@ impl<T: Data> Message<T> {
     /// Wrap bytes as a message.
     pub fn from_bytes(bytes: Bytes) -> Self {
         let typed = ::bincode::deserialize(&bytes[..]).expect("bincode::deserialize() failed");
-        Message { payload: MessageContents::Owned(typed) }
+        Message {
+            payload: MessageContents::Owned(typed),
+        }
     }
 
     /// The number of bytes required to serialize the data.
     pub fn length_in_bytes(&self) -> usize {
         match &self.payload {
-            MessageContents::Binary(bytes) => { bytes.as_bytes().len() },
-            MessageContents::Owned(typed) => {
-                ::bincode::serialized_size(&typed).expect("bincode::serialized_size() failed") as usize
-            },
-            MessageContents::Arc(typed) => {
-                ::bincode::serialized_size(&**typed).expect("bincode::serialized_size() failed") as usize
-            },
+            MessageContents::Binary(bytes) => bytes.as_bytes().len(),
+            MessageContents::Owned(typed) => ::bincode::serialized_size(&typed)
+                .expect("bincode::serialized_size() failed")
+                as usize,
+            MessageContents::Arc(typed) => ::bincode::serialized_size(&**typed)
+                .expect("bincode::serialized_size() failed")
+                as usize,
         }
     }
 
@@ -180,14 +199,18 @@ impl<T: Data> Message<T> {
     pub fn into_bytes<W: ::std::io::Write>(&self, writer: &mut W) {
         match &self.payload {
             MessageContents::Binary(bytes) => {
-                writer.write_all(bytes.as_bytes()).expect("Message::into_bytes(): write_all failed.");
-            },
+                writer
+                    .write_all(bytes.as_bytes())
+                    .expect("Message::into_bytes(): write_all failed.");
+            }
             MessageContents::Owned(typed) => {
-                ::bincode::serialize_into(writer, &typed).expect("bincode::serialize_into() failed");
-            },
+                ::bincode::serialize_into(writer, &typed)
+                    .expect("bincode::serialize_into() failed");
+            }
             MessageContents::Arc(typed) => {
-                ::bincode::serialize_into(writer, &**typed).expect("bincode::serialize_into() failed");
-            },
+                ::bincode::serialize_into(writer, &**typed)
+                    .expect("bincode::serialize_into() failed");
+            }
         }
     }
 }
@@ -197,9 +220,9 @@ impl<T> ::std::ops::Deref for Message<T> {
     fn deref(&self) -> &Self::Target {
         // TODO: In principle we have aready decoded, but let's go again
         match &self.payload {
-            MessageContents::Binary(bytes) => { bytes },
-            MessageContents::Owned(typed) => { typed },
-            MessageContents::Arc(typed) => { typed },
+            MessageContents::Binary(bytes) => bytes,
+            MessageContents::Owned(typed) => typed,
+            MessageContents::Arc(typed) => typed,
         }
     }
 }
@@ -216,7 +239,6 @@ impl<T: Clone> Message<T> {
     }
     /// Ensures the message is typed data and returns a mutable reference to it.
     pub fn as_mut(&mut self) -> &mut T {
-
         let cloned: Option<T> = match &self.payload {
             MessageContents::Binary(bytes) => Some((*bytes).clone()),
             MessageContents::Owned(_) => None,
@@ -230,8 +252,7 @@ impl<T: Clone> Message<T> {
 
         if let MessageContents::Owned(typed) = &mut self.payload {
             typed
-        }
-        else {
+        } else {
             unreachable!()
         }
     }

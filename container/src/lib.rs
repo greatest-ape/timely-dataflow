@@ -55,7 +55,9 @@ impl<T: Clone + 'static> Container for Vec<T> {
         Vec::capacity(self)
     }
 
-    fn clear(&mut self) { Vec::clear(self) }
+    fn clear(&mut self) {
+        Vec::clear(self)
+    }
 }
 
 mod rc {
@@ -78,7 +80,7 @@ mod rc {
             std::ops::Deref::deref(self).capacity()
         }
 
-        fn clear(&mut self) { }
+        fn clear(&mut self) {}
     }
 }
 
@@ -102,7 +104,7 @@ mod arc {
             std::ops::Deref::deref(self).capacity()
         }
 
-        fn clear(&mut self) { }
+        fn clear(&mut self) {}
     }
 }
 

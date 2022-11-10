@@ -1,15 +1,15 @@
 //! A wrapper which accounts records pulled past in a shared count map.
 
-use std::rc::Rc;
 use std::cell::RefCell;
+use std::rc::Rc;
 
+use crate::communication::Pull;
 use crate::dataflow::channels::BundleCore;
 use crate::progress::ChangeBatch;
-use crate::communication::Pull;
 use crate::Container;
 
 /// A wrapper which accounts records pulled past in a shared count map.
-pub struct Counter<T: Ord+Clone+'static, D, P: Pull<BundleCore<T, D>>> {
+pub struct Counter<T: Ord + Clone + 'static, D, P: Pull<BundleCore<T, D>>> {
     pullable: P,
     consumed: Rc<RefCell<ChangeBatch<T>>>,
     phantom: ::std::marker::PhantomData<D>,
@@ -22,13 +22,15 @@ pub struct ConsumedGuard<'a, T: Ord + Clone + 'static> {
     len: usize,
 }
 
-impl<'a, T:Ord+Clone+'static> Drop for ConsumedGuard<'a, T> {
+impl<'a, T: Ord + Clone + 'static> Drop for ConsumedGuard<'a, T> {
     fn drop(&mut self) {
-        self.consumed.borrow_mut().update(self.time.take().unwrap(), self.len as i64);
+        self.consumed
+            .borrow_mut()
+            .update(self.time.take().unwrap(), self.len as i64);
     }
 }
 
-impl<T:Ord+Clone+'static, D: Container, P: Pull<BundleCore<T, D>>> Counter<T, D, P> {
+impl<T: Ord + Clone + 'static, D: Container, P: Pull<BundleCore<T, D>>> Counter<T, D, P> {
     /// Retrieves the next timestamp and batch of data.
     #[inline]
     pub fn next(&mut self) -> Option<&mut BundleCore<T, D>> {
@@ -45,14 +47,16 @@ impl<T:Ord+Clone+'static, D: Container, P: Pull<BundleCore<T, D>>> Counter<T, D,
                     len: message.data.len(),
                 };
                 Some((guard, message))
+            } else {
+                None
             }
-            else { None }
+        } else {
+            None
         }
-        else { None }
     }
 }
 
-impl<T:Ord+Clone+'static, D, P: Pull<BundleCore<T, D>>> Counter<T, D, P> {
+impl<T: Ord + Clone + 'static, D, P: Pull<BundleCore<T, D>>> Counter<T, D, P> {
     /// Allocates a new `Counter` from a boxed puller.
     pub fn new(pullable: P) -> Self {
         Counter {

@@ -1,11 +1,11 @@
-use timely::Data;
-use timely::dataflow::{Scope, Stream};
-use timely::dataflow::operators::Capability;
-use timely::dataflow::operators::generic::OutputHandle;
 use timely::dataflow::channels::pushers::Tee;
+use timely::dataflow::operators::generic::OutputHandle;
+use timely::dataflow::operators::Capability;
+use timely::dataflow::{Scope, Stream};
+use timely::Data;
 
+use rdkafka::consumer::{BaseConsumer, ConsumerContext};
 use rdkafka::Message;
-use rdkafka::consumer::{ConsumerContext, BaseConsumer};
 
 /// Constructs a stream of data from a Kafka consumer.
 ///
@@ -88,29 +88,29 @@ pub fn kafka_source<C, G, D, L>(
     scope: &G,
     name: &str,
     consumer: BaseConsumer<C>,
-    logic: L
+    logic: L,
 ) -> Stream<G, D>
 where
-    C: ConsumerContext+'static,
+    C: ConsumerContext + 'static,
     G: Scope,
     D: Data,
-    L: Fn(&[u8],
-          &mut Capability<G::Timestamp>,
-          &mut OutputHandle<G::Timestamp, D, Tee<G::Timestamp, D>>) -> bool+'static,
+    L: Fn(
+            &[u8],
+            &mut Capability<G::Timestamp>,
+            &mut OutputHandle<G::Timestamp, D, Tee<G::Timestamp, D>>,
+        ) -> bool
+        + 'static,
 {
     use timely::dataflow::operators::generic::source;
     source(scope, name, move |capability, info| {
-
         let activator = scope.activator_for(&info.address[..]);
         let mut cap = Some(capability);
 
         // define a closure to call repeatedly.
         move |output| {
-
             // Act only if we retain the capability to send data.
             let mut complete = false;
             if let Some(mut capability) = cap.as_mut() {
-
                 // Indicate that we should run again.
                 activator.activate();
 
@@ -124,15 +124,15 @@ where
                         if let Some(payload) = message.payload() {
                             complete = logic(payload, &mut capability, output) || complete;
                         }
-                    }
-                    else {
+                    } else {
                         println!("Kafka error");
                     }
                 }
             }
 
-            if complete { cap = None; }
+            if complete {
+                cap = None;
+            }
         }
-
     })
 }

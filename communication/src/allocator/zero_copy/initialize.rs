@@ -2,10 +2,10 @@
 
 use std::sync::Arc;
 // use crate::allocator::Process;
+use super::allocator::{new_vector, TcpBuilder};
+use super::tcp::{recv_loop, send_loop};
 use crate::allocator::process::ProcessBuilder;
 use crate::networking::create_sockets;
-use super::tcp::{send_loop, recv_loop};
-use super::allocator::{TcpBuilder, new_vector};
 
 /// Join handles for send and receive threads.
 ///
@@ -29,7 +29,7 @@ impl Drop for CommsGuard {
     }
 }
 
-use crate::logging::{CommunicationSetup, CommunicationEvent};
+use crate::logging::{CommunicationEvent, CommunicationSetup};
 use logging_core::Logger;
 
 /// Initializes network connections
@@ -38,9 +38,12 @@ pub fn initialize_networking(
     my_index: usize,
     threads: usize,
     noisy: bool,
-    log_sender: Box<dyn Fn(CommunicationSetup)->Option<Logger<CommunicationEvent, CommunicationSetup>>+Send+Sync>)
--> ::std::io::Result<(Vec<TcpBuilder<ProcessBuilder>>, CommsGuard)>
-{
+    log_sender: Box<
+        dyn Fn(CommunicationSetup) -> Option<Logger<CommunicationEvent, CommunicationSetup>>
+            + Send
+            + Sync,
+    >,
+) -> ::std::io::Result<(Vec<TcpBuilder<ProcessBuilder>>, CommsGuard)> {
     let sockets = create_sockets(addresses, my_index, noisy)?;
     initialize_networking_from_sockets(sockets, my_index, threads, log_sender)
 }
@@ -56,13 +59,18 @@ pub fn initialize_networking_from_sockets(
     mut sockets: Vec<Option<std::net::TcpStream>>,
     my_index: usize,
     threads: usize,
-    log_sender: Box<dyn Fn(CommunicationSetup)->Option<Logger<CommunicationEvent, CommunicationSetup>>+Send+Sync>)
--> ::std::io::Result<(Vec<TcpBuilder<ProcessBuilder>>, CommsGuard)>
-{
+    log_sender: Box<
+        dyn Fn(CommunicationSetup) -> Option<Logger<CommunicationEvent, CommunicationSetup>>
+            + Send
+            + Sync,
+    >,
+) -> ::std::io::Result<(Vec<TcpBuilder<ProcessBuilder>>, CommsGuard)> {
     // Sockets are expected to be blocking,
     for socket in sockets.iter_mut() {
         if let Some(socket) = socket {
-            socket.set_nonblocking(false).expect("failed to set socket to blocking");
+            socket
+                .set_nonblocking(false)
+                .expect("failed to set socket to blocking");
         }
     }
 
@@ -79,17 +87,19 @@ pub fn initialize_networking_from_sockets(
     let mut recv_guards = Vec::with_capacity(sockets.len());
 
     // for each process, if a stream exists (i.e. not local) ...
-    for (index, stream) in sockets.into_iter().enumerate().filter_map(|(i, s)| s.map(|s| (i, s))) {
+    for (index, stream) in sockets
+        .into_iter()
+        .enumerate()
+        .filter_map(|(i, s)| s.map(|s| (i, s)))
+    {
         let remote_recv = promises_iter.next().unwrap();
 
         {
             let log_sender = log_sender.clone();
             let stream = stream.try_clone()?;
-            let join_guard =
-            ::std::thread::Builder::new()
+            let join_guard = ::std::thread::Builder::new()
                 .name(format!("timely:send-{}", index))
                 .spawn(move || {
-
                     let logger = log_sender(CommunicationSetup {
                         process: my_index,
                         sender: true,
@@ -108,8 +118,7 @@ pub fn initialize_networking_from_sockets(
             // let remote_sends = remote_sends.clone();
             let log_sender = log_sender.clone();
             let stream = stream.try_clone()?;
-            let join_guard =
-            ::std::thread::Builder::new()
+            let join_guard = ::std::thread::Builder::new()
                 .name(format!("timely:recv-{}", index))
                 .spawn(move || {
                     let logger = log_sender(CommunicationSetup {
@@ -117,12 +126,25 @@ pub fn initialize_networking_from_sockets(
                         sender: false,
                         remote: Some(index),
                     });
-                    recv_loop(stream, remote_send, threads * my_index, my_index, index, logger);
+                    recv_loop(
+                        stream,
+                        remote_send,
+                        threads * my_index,
+                        my_index,
+                        index,
+                        logger,
+                    );
                 })?;
 
             recv_guards.push(join_guard);
         }
     }
 
-    Ok((builders, CommsGuard { send_guards, recv_guards }))
+    Ok((
+        builders,
+        CommsGuard {
+            send_guards,
+            recv_guards,
+        },
+    ))
 }

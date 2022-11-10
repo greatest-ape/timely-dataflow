@@ -1,6 +1,6 @@
-use timely::dataflow::operators::Inspect;
 use timely::dataflow::operators::capture::Replay;
 use timely::dataflow::operators::Accumulate;
+use timely::dataflow::operators::Inspect;
 
 use rdkafka::config::ClientConfig;
 
@@ -8,7 +8,6 @@ use kafkaesque::EventConsumer;
 
 fn main() {
     timely::execute_from_args(std::env::args(), |worker| {
-
         let topic = std::env::args().nth(1).unwrap();
         let source_peers = std::env::args().nth(2).unwrap().parse::<usize>().unwrap();
         let brokers = "localhost:9092";
@@ -26,21 +25,20 @@ fn main() {
             .set("bootstrap.servers", &brokers);
 
         // create replayers from disjoint partition of source worker identifiers.
-        let replayers =
-        (0 .. source_peers)
+        let replayers = (0..source_peers)
             .filter(|i| i % worker.peers() == worker.index())
             .map(|i| {
                 let topic = format!("{}-{:?}", topic, i);
-                EventConsumer::<_,u64>::new(consumer_config.clone(), topic)
+                EventConsumer::<_, u64>::new(consumer_config.clone(), topic)
             })
             .collect::<Vec<_>>();
 
-        worker.dataflow::<u64,_,_>(|scope| {
+        worker.dataflow::<u64, _, _>(|scope| {
             replayers
                 .replay_into(scope)
                 .count()
-                .inspect(|x| println!("replayed: {:?}", x))
-                ;
+                .inspect(|x| println!("replayed: {:?}", x));
         })
-    }).unwrap(); // asserts error-free execution
+    })
+    .unwrap(); // asserts error-free execution
 }
